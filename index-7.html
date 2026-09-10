@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>Planet Race</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{color-scheme:dark;--bg:#0b1020;--panel:#121a2e;--panel2:#18223a;--line:#283550;--text:#eef2ff;--muted:#9aa7bd;--accent:#7dd3fc}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{padding-bottom:env(safe-area-inset-bottom)}
+.wrap{max-width:980px;margin:auto;padding:12px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 2px 12px}
+.brand{font-weight:900;letter-spacing:.08em}
+.speed{color:#bae6fd;font-weight:800}
+.gamebox{position:relative;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:#0d1422}
+canvas{display:block;width:100%;height:auto;aspect-ratio:900/520}
+.hud{position:absolute;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;gap:10px;font-size:.88rem;text-shadow:0 2px 4px #000;pointer-events:none}
+.controls{display:grid;grid-template-columns:1fr 1.1fr 1.4fr 1fr;gap:10px;margin-top:12px}
+button{min-height:64px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--text);font-size:1rem;font-weight:850}
+button.active,button:active{background:#1f3553;transform:translateY(1px)}
+.info{margin-top:14px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.info h2{font-size:1rem;margin:0 0 8px}
+.info p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.5}
+@media(max-width:560px){.controls{grid-template-columns:1fr 1fr}button{min-height:70px;font-size:1.05rem}.wrap{padding:8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">PLANET RACE</div>
+  <div id="speed" class="speed">0 km/h</div>
+</header>
+
+<div class="gamebox">
+<canvas id="game" width="900" height="520" aria-label="Planet Race game"></canvas>
+<div class="hud">
+  <div>Distance <strong id="distance">0 m</strong></div>
+  <div>Engine <strong id="engineHealth">100%</strong></div>
+</div>
+</div>
+
+<section class="controls" aria-label="Driving controls">
+  <button id="left" type="button">◀ LEFT</button>
+  <button id="brake" type="button">BRAKE</button>
+  <button id="throttle" type="button">THROTTLE</button>
+  <button id="right" type="button">RIGHT ▶</button>
+</section>
+
+<section class="info">
+  <h2>Mobile prototype</h2>
+  <p>Hold throttle to accelerate. Use left/right to steer and brake to slow down. This single-file version is designed to get GitHub Pages working immediately.</p>
+</section>
+</div>
+
+<script>
+(() => {
+const CFG={car:{maxSpeed:210,acceleration:95,braking:130,steering:2.5,drag:.44,engineDurability:1600},track:{roadWidth:520,shoulderWidth:95}};
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const speedEl=document.getElementById('speed'),distanceEl=document.getElementById('distance'),healthEl=document.getElementById('engineHealth');
+const input={left:false,right:false,throttle:false,brake:false};
+let speed=0,x=canvas.width/2,distance=0,engineHealth=100,last=performance.now(),roadScroll=0;
+
+function bindHold(id,key){
+ const el=document.getElementById(id);
+ const on=e=>{e.preventDefault();input[key]=true;el.classList.add('active')};
+ const off=e=>{e.preventDefault();input[key]=false;el.classList.remove('active')};
+ el.addEventListener('pointerdown',on);el.addEventListener('pointerup',off);
+ el.addEventListener('pointercancel',off);el.addEventListener('pointerleave',off);
+}
+bindHold('left','left');bindHold('right','right');bindHold('throttle','throttle');bindHold('brake','brake');
+
+const keyMap={ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowUp:'throttle',w:'throttle',W:'throttle',ArrowDown:'brake',s:'brake',S:'brake'};
+addEventListener('keydown',e=>{const k=keyMap[e.key];if(k){input[k]=true;e.preventDefault()}},{passive:false});
+addEventListener('keyup',e=>{const k=keyMap[e.key];if(k){input[k]=false;e.preventDefault()}},{passive:false});
+
+function update(dt){
+ const car=CFG.car;
+ if(input.throttle&&engineHealth>0){
+   speed+=car.acceleration*dt*Math.max(.2,1-speed/(car.maxSpeed*1.15));
+   engineHealth-=(speed/car.maxSpeed)*.22*dt*(1200/car.engineDurability);
+ }else speed-=car.drag*28*dt;
+ if(input.brake)speed-=car.braking*dt;
+ speed=Math.max(0,Math.min(car.maxSpeed,speed));
+ engineHealth=Math.max(0,Math.min(100,engineHealth));
+ const steer=.35+Math.min(1,speed/70);
+ if(input.left)x-=car.steering*120*steer*dt;
+ if(input.right)x+=car.steering*120*steer*dt;
+ const roadLeft=(canvas.width-CFG.track.roadWidth)/2,roadRight=roadLeft+CFG.track.roadWidth;
+ x=Math.max(roadLeft+26,Math.min(roadRight-26,x));
+ distance+=(speed/3.6)*dt;
+ roadScroll=(roadScroll+speed*dt*1.9)%80;
+ speedEl.textContent=Math.round(speed)+' km/h';
+ distanceEl.textContent=Math.round(distance)+' m';
+ healthEl.textContent=Math.ceil(engineHealth)+'%';
+}
+function draw(){
+ const w=canvas.width,h=canvas.height,roadLeft=(w-CFG.track.roadWidth)/2;
+ ctx.clearRect(0,0,w,h);
+ ctx.fillStyle='#16351f';ctx.fillRect(0,0,w,h);
+ ctx.fillStyle='#574e45';ctx.fillRect(roadLeft-CFG.track.shoulderWidth,0,CFG.track.roadWidth+CFG.track.shoulderWidth*2,h);
+ ctx.fillStyle='#262d36';ctx.fillRect(roadLeft,0,CFG.track.roadWidth,h);
+ ctx.strokeStyle='#eef2f7';ctx.lineWidth=5;ctx.beginPath();
+ ctx.moveTo(roadLeft+8,0);ctx.lineTo(roadLeft+8,h);
+ ctx.moveTo(roadLeft+CFG.track.roadWidth-8,0);ctx.lineTo(roadLeft+CFG.track.roadWidth-8,h);ctx.stroke();
+ ctx.strokeStyle='#e8cf55';ctx.lineWidth=6;ctx.setLineDash([34,46]);ctx.lineDashOffset=roadScroll;ctx.beginPath();
+ ctx.moveTo(w/2,-100);ctx.lineTo(w/2,h+100);ctx.stroke();ctx.setLineDash([]);
+ ctx.fillStyle='#285530';
+ for(let y=-80+(roadScroll*2)%120;y<h+80;y+=120){
+   ctx.beginPath();ctx.arc(55,y,25,0,Math.PI*2);ctx.fill();
+   ctx.beginPath();ctx.arc(w-55,y+50,20,0,Math.PI*2);ctx.fill();
+ }
+ const carY=h-110;ctx.save();ctx.translate(x,carY);
+ ctx.fillStyle='#d9464b';ctx.fillRect(-24,-42,48,84);
+ ctx.fillStyle='#1a2535';ctx.fillRect(-18,-25,36,26);
+ ctx.fillStyle='#f3f4f6';ctx.fillRect(-20,-38,9,8);ctx.fillRect(11,-38,9,8);
+ ctx.fillStyle='#0a0a0a';ctx.fillRect(-29,-28,7,19);ctx.fillRect(22,-28,7,19);ctx.fillRect(-29,14,7,19);ctx.fillRect(22,14,7,19);ctx.restore();
+ if(engineHealth<=0){
+  ctx.fillStyle='rgba(0,0,0,.58)';ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='700 34px system-ui';ctx.fillText('ENGINE FAILED',w/2,h/2);
+  ctx.font='18px system-ui';ctx.fillText('Reload the page to restart.',w/2,h/2+38);
+ }
+}
+function loop(now){const dt=Math.min(.04,(now-last)/1000);last=now;update(dt);draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
